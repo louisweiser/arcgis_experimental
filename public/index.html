@@ -30,6 +30,7 @@
         "esri/layers/GraphicsLayer",
         "esri/views/MapView",
         "esri/geometry/geometryEngine",
+        "esri/geometry/Point",
         "esri/geometry/Polyline",
       ], function (
         Sketch,
@@ -37,6 +38,7 @@
         GraphicsLayer,
         MapView,
         geometryEngine,
+        Point,
         Polyline
       ) {
         const graphicsLayer = new GraphicsLayer();
@@ -53,7 +55,7 @@
           center: [90, 45], // Longitude, latitude
         });
 
-        let activeSketchGraphic = null;
+        let lastPoint = null;
 
         view.when(function () {
           const sketch = new Sketch({
@@ -66,30 +68,41 @@
 
           sketch.on("create", function (event) {
             if (event.state === "start") {
-              activeSketchGraphic = event.graphic;
+              lastPoint = event.graphic.geometry.clone().getPoint(0, 0);
             } else if (event.state === "complete") {
-              activeSketchGraphic = null;
+              lastPoint = null;
             }
           });
 
+          sketch.on("vertex-add", function (event) {
+            lastPoint = event.vertices[event.vertices.length - 1];
+          });
+
           view.on("pointer-move", function (event) {
-            if (
-              activeSketchGraphic &&
-              activeSketchGraphic.geometry.type === "polyline"
-            ) {
+            // Prüfen Sie, ob ein letzter Punkt vorhanden ist
+            if (lastPoint) {
               // Konvertieren Sie den Mauszeigerpunkt in eine Kartenkoordinate
               const point = view.toMap({ x: event.x, y: event.y });
-              const polyline = new Polyline({
-                paths: activeSketchGraphic.geometry.paths,
+
+              // Erstellen Sie eine temporäre Linie vom letzten festgelegten Punkt zur aktuellen Mausposition
+              const tempLine = new Polyline({
+                paths: [
+                  [
+                    [lastPoint.x, lastPoint.y],
+                    [point.x, point.y],
+                  ],
+                ],
                 spatialReference: view.spatialReference,
               });
 
-              // Fügen Sie den aktuellen Punkt zur Polylinie hinzu
-              polyline.insertPoint(0, polyline.paths[0].length, point);
-
-              // Berechnen Sie die Länge der temporären Linie
-              const length = geometryEngine.geodesicLength(polyline, "meters");
-              console.log(`Temporäre Linienlänge: ${length.toFixed(2)} Meter`);
+              // Berechnen Sie die Länge dieser temporären Linie
+              const tempLength = geometryEngine.geodesicLength(
+                tempLine,
+                "meters"
+              );
+              console.log(
+                `Temporäre Linienlänge: ${tempLength.toFixed(2)} Meter`
+              );
             }
           });
         });
