@@ -30,7 +30,6 @@
         "esri/layers/GraphicsLayer",
         "esri/views/MapView",
         "esri/geometry/geometryEngine",
-        "esri/geometry/Point",
         "esri/geometry/Polyline",
       ], function (
         Sketch,
@@ -38,11 +37,9 @@
         GraphicsLayer,
         MapView,
         geometryEngine,
-        Point,
         Polyline
       ) {
         const graphicsLayer = new GraphicsLayer();
-
         const map = new Map({
           basemap: "topo-vector",
           layers: [graphicsLayer],
@@ -55,7 +52,7 @@
           center: [90, 45], // Longitude, latitude
         });
 
-        let lastPoint = null;
+        let activeSketchGraphic = null;
 
         view.when(function () {
           const sketch = new Sketch({
@@ -68,41 +65,46 @@
 
           sketch.on("create", function (event) {
             if (event.state === "start") {
-              lastPoint = event.graphic.geometry.clone().getPoint(0, 0);
+              activeSketchGraphic = event.graphic;
             } else if (event.state === "complete") {
-              lastPoint = null;
+              activeSketchGraphic = null;
             }
           });
 
-          sketch.on("vertex-add", function (event) {
-            lastPoint = event.vertices[event.vertices.length - 1];
+          sketch.on("update", function (event) {
+            if (
+              event.state === "active" &&
+              event.toolEventInfo &&
+              event.toolEventInfo.type === "move-stop"
+            ) {
+              const polyline = activeSketchGraphic.geometry;
+              const length = geometryEngine.geodesicLength(polyline, "meters");
+              console.log(
+                `Current polyline length: ${length.toFixed(2)} meters`
+              );
+            }
           });
 
           view.on("pointer-move", function (event) {
-            // Prüfen Sie, ob ein letzter Punkt vorhanden ist
-            if (lastPoint) {
-              // Konvertieren Sie den Mauszeigerpunkt in eine Kartenkoordinate
+            if (activeSketchGraphic) {
+              // Convert the pointer position to a map coordinate
               const point = view.toMap({ x: event.x, y: event.y });
+              if (point) {
+                // Create a temporary Polyline from the last vertex to the current mouse position
+                const polyline = activeSketchGraphic.geometry.clone();
+                const lastPathIndex = polyline.paths.length - 1;
+                const lastPointIndex = polyline.paths[lastPathIndex].length - 1;
+                polyline.insertPoint(lastPathIndex, lastPointIndex, point);
 
-              // Erstellen Sie eine temporäre Linie vom letzten festgelegten Punkt zur aktuellen Mausposition
-              const tempLine = new Polyline({
-                paths: [
-                  [
-                    [lastPoint.x, lastPoint.y],
-                    [point.x, point.y],
-                  ],
-                ],
-                spatialReference: view.spatialReference,
-              });
-
-              // Berechnen Sie die Länge dieser temporären Linie
-              const tempLength = geometryEngine.geodesicLength(
-                tempLine,
-                "meters"
-              );
-              console.log(
-                `Temporäre Linienlänge: ${tempLength.toFixed(2)} Meter`
-              );
+                // Calculate the length of this temporary line
+                const tempLength = geometryEngine.geodesicLength(
+                  polyline,
+                  "meters"
+                );
+                console.log(
+                  `Temporary line length: ${tempLength.toFixed(2)} meters`
+                );
+              }
             }
           });
         });
