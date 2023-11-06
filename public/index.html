@@ -1,43 +1,103 @@
-<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
     <meta
-      name="description"
-      content="Web site created using create-react-app"
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
     />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
+    <title>Sketch widget | Sample | ArcGIS Maps SDK for JavaScript 4.28</title>
 
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
+    <link
+      rel="stylesheet"
+      href="https://js.arcgis.com/4.28/esri/themes/light/main.css"
+    />
+    <script src="https://js.arcgis.com/4.28/"></script>
+
+    <style>
+      html,
+      body,
+      #viewDiv {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+    </style>
+    <script>
+      require([
+        "esri/widgets/Sketch",
+        "esri/Map",
+        "esri/layers/GraphicsLayer",
+        "esri/views/MapView",
+        "esri/geometry/geometryEngine",
+        "esri/geometry/Polyline",
+      ], function (
+        Sketch,
+        Map,
+        GraphicsLayer,
+        MapView,
+        geometryEngine,
+        Polyline
+      ) {
+        const graphicsLayer = new GraphicsLayer();
+
+        const map = new Map({
+          basemap: "topo-vector",
+          layers: [graphicsLayer],
+        });
+
+        const view = new MapView({
+          container: "viewDiv",
+          map: map,
+          zoom: 5,
+          center: [90, 45], // Longitude, latitude
+        });
+
+        let activeSketchGraphic = null;
+
+        view.when(function () {
+          const sketch = new Sketch({
+            layer: graphicsLayer,
+            view: view,
+            creationMode: "update",
+          });
+
+          view.ui.add(sketch, "top-right");
+
+          sketch.on("create", function (event) {
+            if (event.state === "start") {
+              activeSketchGraphic = event.graphic;
+            } else if (event.state === "complete") {
+              activeSketchGraphic = null;
+            }
+          });
+
+          view.on("pointer-move", function (event) {
+            if (
+              activeSketchGraphic &&
+              activeSketchGraphic.geometry.type === "polyline"
+            ) {
+              // Konvertieren Sie den Mauszeigerpunkt in eine Kartenkoordinate
+              const point = view.toMap({ x: event.x, y: event.y });
+              const polyline = new Polyline({
+                paths: activeSketchGraphic.geometry.paths,
+                spatialReference: view.spatialReference,
+              });
+
+              // Fügen Sie den aktuellen Punkt zur Polylinie hinzu
+              polyline.insertPoint(0, polyline.paths[0].length, point);
+
+              // Berechnen Sie die Länge der temporären Linie
+              const length = geometryEngine.geodesicLength(polyline, "meters");
+              console.log(`Temporäre Linienlänge: ${length.toFixed(2)} Meter`);
+            }
+          });
+        });
+      });
+    </script>
   </head>
+
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
-
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
-
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
+    <div id="viewDiv"></div>
   </body>
 </html>
