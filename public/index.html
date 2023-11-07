@@ -31,15 +31,24 @@
         "esri/views/MapView",
         "esri/geometry/geometryEngine",
         "esri/geometry/Polyline",
+        "esri/geometry/Point",
+        "esri/geometry/SpatialReference",
+        "esri/Graphic",
+        "esri/symbols/TextSymbol",
       ], function (
         Sketch,
         Map,
         GraphicsLayer,
         MapView,
         geometryEngine,
-        Polyline
+        Polyline,
+        Point,
+        SpatialReference,
+        Graphic,
+        TextSymbol
       ) {
         const graphicsLayer = new GraphicsLayer();
+
         const map = new Map({
           basemap: "topo-vector",
           layers: [graphicsLayer],
@@ -48,11 +57,15 @@
         const view = new MapView({
           container: "viewDiv",
           map: map,
-          zoom: 5,
-          center: [90, 45], // Longitude, latitude
+          zoom: 8,
+          center: [90, 45],
         });
 
         let activeSketchGraphic = null;
+        let lastCoordinates = null;
+        let currentCoordinates = null;
+        let polylinePointCounter = null;
+        let currentTextGraphic = null;
 
         view.when(function () {
           const sketch = new Sketch({
@@ -69,41 +82,96 @@
             } else if (event.state === "complete") {
               activeSketchGraphic = null;
             }
-          });
 
-          sketch.on("update", function (event) {
             if (
-              event.state === "active" &&
-              event.toolEventInfo &&
-              event.toolEventInfo.type === "move-stop"
+              activeSketchGraphic &&
+              activeSketchGraphic.geometry.type === "polyline"
             ) {
-              const polyline = activeSketchGraphic.geometry;
-              const length = geometryEngine.geodesicLength(polyline, "meters");
-              console.log(
-                `Current polyline length: ${length.toFixed(2)} meters`
-              );
+              const newPolylinePointCounter =
+                event.graphic.geometry.paths[0].length;
+
+              if (newPolylinePointCounter != polylinePointCounter) {
+                polylinePointCounter = newPolylinePointCounter;
+
+                lastCoordinates = currentCoordinates;
+              }
             }
           });
 
           view.on("pointer-move", function (event) {
-            if (activeSketchGraphic) {
-              // Convert the pointer position to a map coordinate
-              const point = view.toMap({ x: event.x, y: event.y });
-              if (point) {
-                // Create a temporary Polyline from the last vertex to the current mouse position
-                const polyline = activeSketchGraphic.geometry.clone();
-                const lastPathIndex = polyline.paths.length - 1;
-                const lastPointIndex = polyline.paths[lastPathIndex].length - 1;
-                polyline.insertPoint(lastPathIndex, lastPointIndex, point);
+            if (
+              activeSketchGraphic &&
+              activeSketchGraphic.geometry.type === "polyline"
+            ) {
+              const mapPoint = view.toMap(event);
 
-                // Calculate the length of this temporary line
-                const tempLength = geometryEngine.geodesicLength(
-                  polyline,
-                  "meters"
-                );
+              if (mapPoint) {
+                currentCoordinates = {
+                  longitude: mapPoint.longitude.toFixed(5),
+                  latitude: mapPoint.latitude.toFixed(5),
+                };
+              }
+
+              if (currentCoordinates && lastCoordinates) {
+                let point1 = new Point({
+                  longitude: lastCoordinates.longitude,
+                  latitude: lastCoordinates.latitude,
+                  spatialReference: SpatialReference.WGS84,
+                });
+
+                let point2 = new Point({
+                  longitude: currentCoordinates.longitude,
+                  latitude: currentCoordinates.latitude,
+                  spatialReference: SpatialReference.WGS84,
+                });
+
+                var polyline = new Polyline({
+                  paths: [
+                    [
+                      [point1.longitude, point1.latitude],
+                      [point2.longitude, point2.latitude],
+                    ],
+                  ],
+
+                  spatialReference: SpatialReference.WGS84,
+                });
+
+                let length = geometryEngine.geodesicLength(polyline, "meters");
+
                 console.log(
-                  `Temporary line length: ${tempLength.toFixed(2)} meters`
+                  `Temporäre Linienlänge: ${length.toFixed(2)} Meter`
                 );
+
+                if (currentTextGraphic) {
+                  view.graphics.remove(currentTextGraphic);
+                }
+
+                const midPoint = polyline.getPoint(
+                  0,
+                  Math.floor(polyline.paths[0].length / 2)
+                );
+
+                const textSymbol = new TextSymbol({
+                  text: `${length.toFixed(2)} Meter`,
+                  color: "black",
+                  haloColor: "white",
+                  haloSize: "1px",
+                  horizontalAlignment: "center",
+                  verticalAlignment: "middle",
+                  font: {
+                    size: 12,
+                    family: "sans-serif",
+                  },
+                });
+
+                const textGraphic = new Graphic({
+                  geometry: midPoint,
+                  symbol: textSymbol,
+                });
+
+                currentTextGraphic = textGraphic;
+
+                view.graphics.add(currentTextGraphic);
               }
             }
           });
@@ -111,7 +179,6 @@
       });
     </script>
   </head>
-
   <body>
     <div id="viewDiv"></div>
   </body>
